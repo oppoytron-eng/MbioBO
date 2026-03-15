@@ -49,4 +49,48 @@ class User extends Authenticatable
         'est_actif' => 'boolean',
         'password' => 'hashed',
     ];
+
+    public function apiWallet()
+    {
+        return $this->hasOne(ApiWallet::class, 'user_id');
+    }
+
+    public function driverDocuments()
+    {
+        return $this->hasMany(ApiDriverDocument::class, 'chauffeur_id');
+    }
+
+    public function walletTransactions()
+    {
+        return $this->hasManyThrough(
+            ApiWalletTransaction::class,
+            ApiWallet::class,
+            'user_id',
+            'wallet_id',
+            'id',
+            'id'
+        );
+    }
+
+    public function payoutRequests()
+    {
+        return $this->hasManyThrough(
+            ApiPayoutRequest::class,
+            ApiWallet::class,
+            'user_id',
+            'wallet_id',
+            'id',
+            'id'
+        );
+    }
+
+    public function clientRatings()
+    {
+        return $this->hasMany(ApiClientRating::class, 'client_id');
+    }
+
+    public function driverRatings()
+    {
+        return $this->hasMany(ApiClientRating::class, 'driver_id');
+    }
 }

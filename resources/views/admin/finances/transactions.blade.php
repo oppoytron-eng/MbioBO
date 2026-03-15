@@ -31,8 +31,8 @@
                         @foreach($courses as $course)
                             <tr>
                                 <td>{{ $course->id }}</td>
-                                <td>{{ optional($course->client->utilisateur)->prenom ?? '—' }} {{ optional($course->client->utilisateur)->nom ?? '' }}</td>
-                                <td>{{ optional($course->chauffeur->utilisateur)->prenom ?? '—' }} {{ optional($course->chauffeur->utilisateur)->nom ?? '' }}</td>
+                            <td>{{ optional(optional($course->client)->utilisateur)->prenom ?? '—' }} {{ optional(optional($course->client)->utilisateur)->nom ?? '' }}</td>
+                            <td>{{ optional(optional($course->chauffeur)->utilisateur)->prenom ?? '—' }} {{ optional(optional($course->chauffeur)->utilisateur)->nom ?? '' }}</td>
                                 <td>{{ number_format($course->prix_final, 0, ',', ' ') }}</td>
                                 <td>{{ $course->modePaiement }}</td>
                                 <td>

@@ -20,6 +20,14 @@ class ApiCourse extends Model
         'mode_paiement',
         'statut',
         'est_paye',
+        'ride_otp',
+        'otp_expires_at',
+        'otp_verified_at',
+        'countdown_seconds',
+        'countdown_started_at',
+        'distance_meters',
+        'client_snapshot',
+        'metadata',
     ];
 
     protected $casts = [
@@ -30,6 +38,13 @@ class ApiCourse extends Model
         'prix_estime' => 'decimal:2',
         'prix_final' => 'decimal:2',
         'est_paye' => 'boolean',
+        'otp_expires_at' => 'datetime',
+        'otp_verified_at' => 'datetime',
+        'countdown_seconds' => 'integer',
+        'countdown_started_at' => 'datetime',
+        'client_snapshot' => 'array',
+        'metadata' => 'array',
+        'distance_meters' => 'decimal:2',
     ];
 
     public function client()
@@ -45,5 +60,10 @@ class ApiCourse extends Model
     public function notifications()
     {
         return $this->hasMany(ApiNotification::class, 'course_id');
+    }
+
+    public function tracks()
+    {
+        return $this->hasMany(ApiCourseTrack::class, 'course_id');
     }
 }
