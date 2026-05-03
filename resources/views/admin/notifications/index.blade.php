@@ -80,10 +80,10 @@
                     <tbody>
                         @foreach($notifications as $notification)
                             <tr>
-                                <td>{{ ucfirst(str_replace('_', ' ', $notification->target)) }}</td>
-                                <td>{{ $notification->title ?? '—' }}</td>
+                                <td>{{ ucfirst($notification->type) }}</td>
+                                <td>{{ $notification->payload['title'] ?? '—' }}</td>
                                 <td style="max-width:320px;">{{ $notification->message }}</td>
-                                <td>{{ optional($notification->sent_at)->format('d/m/Y H:i') ?? $notification->created_at->format('d/m/Y H:i') }}</td>
+                                <td>{{ $notification->created_at->format('d/m/Y H:i') }}</td>
                                 <td>
                                     <form method="POST" action="{{ route('admin.notifications.destroy', $notification) }}">
                                         @csrf

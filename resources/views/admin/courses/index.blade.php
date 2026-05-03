@@ -52,38 +52,51 @@
                     <tr>
                         <td>#{{ $course->id }}</td>
                         <td>
-                            <a href="{{ route('admin.clients.show', $course->client_id) }}">{{ $course->client->utilisateur->prenom ?? '—' }} {{ $course->client->utilisateur->nom ?? '' }}</a>
-                        </td>
-                        <td>
-                            <a href="{{ route('admin.chauffeurs.show', $course->chauffeur_id) ?? '#' }}">
-                                {{ optional($course->chauffeur->utilisateur)->prenom ?? '—' }}
-                                {{ optional($course->chauffeur->utilisateur)->nom ?? '' }}
-                            </a>
-                        </td>
-                        <td>
-                            @if ($course->est_annule)
-                                <span class="badge warn">Annulée</span>
-                            @elseif ($course->est_terminee)
-                                <span class="badge success">Terminée</span>
+                            @if($course->client && $course->client_id)
+                                <a href="{{ route('admin.clients.show', $course->client_id) }}">
+                                    {{ $course->client->name }}
+                                </a>
                             @else
-                                <span class="badge success">{{ $course->statut }}</span>
+                                <span>—</span>
                             @endif
                         </td>
                         <td>
-                            {{ number_format($course->distance_km, 1) }} km<br>
+                            @if($course->chauffeur && $course->chauffeur_id)
+                                <a href="{{ route('admin.chauffeurs.show', $course->chauffeur_id) }}">
+                                    {{ $course->chauffeur->name }}
+                                </a>
+                            @else
+                                <span>—</span>
+                            @endif
+                        </td>
+                        <td>
+                            @if ($course->statut === 'annulee')
+                                <span class="badge warn">Annulée</span>
+                            @elseif ($course->statut === 'terminee')
+                                <span class="badge success">Terminée</span>
+                            @elseif ($course->statut === 'en_cours')
+                                <span class="badge info">En cours</span>
+                            @elseif ($course->statut === 'acceptee')
+                                <span class="badge primary">Acceptée</span>
+                            @else
+                                <span class="badge secondary">{{ $course->statut }}</span>
+                            @endif
+                        </td>
+                        <td>
+                            {{ number_format($course->distance_meters / 1000, 1) }} km<br>
                             {{ number_format($course->prix_final, 0, ',', ' ') }} FCFA
                         </td>
-                        <td>{{ optional($course->demande_le)->format('d/m H:i') ?? '—' }}</td>
+                        <td>{{ optional($course->created_at)->format('d/m H:i') ?? '—' }}</td>
                         <td>
                             <div class="quick-actions">
                                 <a href="{{ route('admin.courses.show', $course->id) }}" class="badge success">Détails</a>
-                                @if (! $course->est_annule)
+                                @if ($course->statut !== 'annulee')
                                     <form method="POST" action="{{ route('admin.courses.cancel', $course->id) }}">
                                         @csrf
                                         <button type="submit" class="badge warn">Annuler</button>
                                     </form>
                                 @endif
-                                @if (! $course->est_terminee)
+                                @if ($course->statut !== 'terminee')
                                     <form method="POST" action="{{ route('admin.courses.complete', $course->id) }}">
                                         @csrf
                                         <button type="submit" class="badge success">Terminer</button>

@@ -93,4 +93,52 @@ class User extends Authenticatable
     {
         return $this->hasMany(ApiClientRating::class, 'driver_id');
     }
+
+    /**
+     * Relation vers le profil chauffeur (ancien système)
+     */
+    public function chauffeurProfile()
+    {
+        return $this->hasOne(Chauffeur::class, 'utilisateur_id', 'id');
+    }
+
+    /**
+     * Relation vers le statut du chauffeur (nouveau système API)
+     */
+    public function chauffeurStatus()
+    {
+        return $this->hasOne(ChauffeurStatus::class, 'user_id', 'id');
+    }
+
+    /**
+     * Courses en tant que chauffeur (API)
+     */
+    public function apiCourses()
+    {
+        return $this->hasMany(ApiCourse::class, 'chauffeur_id');
+    }
+
+    /**
+     * Courses en tant que client (API)
+     */
+    public function clientCourses()
+    {
+        return $this->hasMany(ApiCourse::class, 'client_id');
+    }
+
+    /**
+     * Vérifier si l'utilisateur est un chauffeur
+     */
+    public function isChauffeur()
+    {
+        return $this->role === 'chauffeur';
+    }
+
+    /**
+     * Vérifier si l'utilisateur est un client
+     */
+    public function isClient()
+    {
+        return $this->role === 'client';
+    }
 }

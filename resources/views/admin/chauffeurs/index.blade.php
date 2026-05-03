@@ -59,24 +59,30 @@
                 @forelse ($chauffeurs as $chauffeur)
                     <tr>
                         <td>
-                            <strong>{{ $chauffeur->utilisateur->prenom ?? '' }} {{ $chauffeur->utilisateur->nom ?? '' }}</strong><br>
-                            <small class="muted">Permis {{ $chauffeur->numero_permis ?? '—' }}</small>
+                            <strong>{{ $chauffeur->name }}</strong><br>
+                            <small class="muted">Permis {{ $chauffeur->chauffeurProfile ? $chauffeur->chauffeurProfile->numero_permis : '—' }}</small>
                         </td>
                         <td>
-                            {{ $chauffeur->utilisateur->email ?? '—' }}<br>
-                            <span class="muted">{{ $chauffeur->utilisateur->telephone ?? '—' }}</span>
+                            {{ $chauffeur->email ?? '—' }}<br>
+                            <span class="muted">{{ $chauffeur->telephone ?? '—' }}</span>
                         </td>
                         <td>
-                            <span class="badge {{ $chauffeur->statut_operationnel === 'actif' ? 'success' : 'warn' }}">
-                                {{ ucfirst($chauffeur->statut_operationnel) }}
+                            <span class="badge {{ $chauffeur->est_actif ? 'success' : 'warn' }}">
+                                {{ $chauffeur->est_actif ? 'Actif' : 'Inactif' }}
                             </span>
                             <div class="pill" style="margin-left:0;">
-                                Docs: {{ ucfirst($chauffeur->etat_documents) }}
+                                @if($chauffeur->chauffeurStatus)
+                                    {{ $chauffeur->chauffeurStatus->statut_operationnel === 'actif' ? 'Actif' : ($chauffeur->chauffeurStatus->statut_operationnel === 'suspendu' ? 'Suspendu' : 'Inactif') }}
+                                @elseif($chauffeur->chauffeurProfile)
+                                    {{ $chauffeur->chauffeurProfile->statut_operationnel === 'actif' ? 'Actif' : ($chauffeur->chauffeurProfile->statut_operationnel === 'suspendu' ? 'Suspendu' : 'Inactif') }}
+                                @else
+                                    Actif
+                                @endif
                             </div>
                         </td>
                         <td>
                             {{ $chauffeur->courses_count ?? 0 }} course{{ ($chauffeur->courses_count ?? 0) > 1 ? 's' : '' }}<br>
-                            <small>Note moyenne {{ number_format($chauffeur->note_moyenne, 1) }}</small>
+                            <small>Note moyenne N/A</small>
                         </td>
                         <td>
                             <div class="quick-actions">
@@ -98,7 +104,7 @@
                                     <button type="submit" class="badge warn">Suspendre</button>
                                 </form>
 
-                                @if ($chauffeur->trashed())
+                                @if (! $chauffeur->est_actif)
                                     <form method="POST" action="{{ route('admin.chauffeurs.restore', $chauffeur->id) }}">
                                         @csrf
                                         <button type="submit" class="badge success">Restaurer</button>

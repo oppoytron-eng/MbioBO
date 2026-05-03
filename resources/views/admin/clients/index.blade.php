@@ -53,28 +53,26 @@
                     @endphp
                     <tr>
                         <td>
-                            <strong>{{ $client->utilisateur->prenom ?? '' }} {{ $client->utilisateur->nom ?? '' }}</strong>
+                            <strong>{{ $client->name }}</strong>
                             <div class="muted" style="font-size:0.8rem; margin-top:0.25rem;">
                                 Inscrit le {{ optional($client->created_at)->format('d/m/Y') ?: '—' }}
                             </div>
                         </td>
                         <td>
-                            {{ $client->utilisateur->email ?? '—' }}<br>
-                            <span class="muted">{{ $client->utilisateur->telephone ?? '—' }}</span>
+                            {{ $client->email ?? '—' }}<br>
+                            <span class="muted">{{ $client->telephone ?? '—' }}</span>
                         </td>
                         <td>
                             <span class="badge {{ $client->est_actif ? 'success' : 'warn' }}">
                                 {{ $client->est_actif ? 'Actif' : 'Désactivé' }}
                             </span>
-                            @if ($client->trashed())
+                            @if (! $client->est_actif)
                                 <span class="pill">Archivé</span>
-                            @elseif (! $client->est_actif)
-                                <span class="pill">Suspendu</span>
                             @endif
                         </td>
                         <td>
                             {{ $courseCount }} course{{ $courseCount > 1 ? 's' : '' }}<br>
-                            <small>Note moyenne {{ number_format($client->note_moyenne, 1) }}</small>
+                            <small>Note moyenne N/A</small>
                         </td>
                         <td>
                             <div class="quick-actions">
@@ -86,7 +84,7 @@
                                         {{ $client->est_actif ? 'Désactiver' : 'Réactiver' }}
                                     </button>
                                 </form>
-                                @if (! $client->trashed())
+                                @if ($client->est_actif)
                                     <form method="POST" action="{{ route('admin.clients.archive', $client->id) }}">
                                         @csrf
                                         <button type="submit" class="badge warn">Archiver</button>

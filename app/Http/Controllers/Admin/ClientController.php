@@ -3,7 +3,8 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\Client;
+use App\Models\User;
+use App\Models\ApiCourse;
 use Illuminate\Http\Request;
 
 class ClientController extends Controller
@@ -18,28 +19,29 @@ class ClientController extends Controller
         $search = $request->input('search');
         $showArchived = $request->boolean('archived');
 
-        $query = Client::with(['utilisateur'])
-            ->withCount('courses');
+        $query = User::where('role', 'client')
+            ->withCount(['clientCourses as courses_count']);
 
         if ($search) {
-            $query->whereHas('utilisateur', function ($q) use ($search) {
-                $q->where('nom', 'like', "%{$search}%")
-                    ->orWhere('prenom', 'like', "%{$search}%")
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
                     ->orWhere('email', 'like', "%{$search}%")
                     ->orWhere('telephone', 'like', "%{$search}%");
             });
         }
 
+        // Pour l'archivage, on utilise est_actif au lieu de soft delete
         if ($showArchived) {
-            $query->onlyTrashed();
+            $query->where('est_actif', false);
         }
 
         $clients = $query->orderByDesc('created_at')->paginate(10)->withQueryString();
 
         $stats = [
-            'total' => Client::count(),
-            'archived' => Client::onlyTrashed()->count(),
-            'disabled' => Client::where('est_actif', false)->count(),
+            'total' => User::where('role', 'client')->count(),
+            'archived' => User::where('role', 'client')->where('est_actif', false)->count(),
+            'disabled' => User::where('role', 'client')->where('est_actif', false)->count(),
+            'active' => User::where('role', 'client')->where('est_actif', true)->count(),
         ];
 
         return view('admin.clients.index', compact('clients', 'search', 'showArchived', 'stats'));
@@ -47,23 +49,32 @@ class ClientController extends Controller
 
     public function show($clientId)
     {
-        $client = Client::withTrashed()
-            ->with(['utilisateur'])
-            ->withCount('courses')
+        $client = User::where('role', 'client')
+            ->withCount(['clientCourses as courses_count'])
             ->findOrFail($clientId);
 
-        $history = $client->courses()
-            ->with('chauffeur.utilisateur')
-            ->orderByDesc('termine_le')
+        $history = ApiCourse::with('chauffeur')
+            ->where('client_id', $clientId)
+            ->orderByDesc('created_at')
             ->limit(12)
             ->get();
 
-        return view('admin.clients.show', compact('client', 'history'));
+        $courseStats = [
+            'total' => $client->courses_count,
+            'completed' => ApiCourse::where('client_id', $clientId)
+                ->where('statut', 'terminee')->count(),
+            'cancelled' => ApiCourse::where('client_id', $clientId)
+                ->where('statut', 'annulee')->count(),
+            'total_spent' => ApiCourse::where('client_id', $clientId)
+                ->where('statut', 'terminee')->sum('prix_final'),
+        ];
+
+        return view('admin.clients.show', compact('client', 'history', 'courseStats'));
     }
 
     public function toggleActive(Request $request, $clientId)
     {
-        $client = Client::withTrashed()->findOrFail($clientId);
+        $client = User::where('role', 'client')->findOrFail($clientId);
 
         $data = $request->validate([
             'action' => 'required|in:disable,enable',
@@ -81,36 +92,30 @@ class ClientController extends Controller
 
     public function archive(Request $request, $clientId)
     {
-        $client = Client::withTrashed()->findOrFail($clientId);
+        $client = User::where('role', 'client')->findOrFail($clientId);
 
-        if ($request->boolean('force') && $client->trashed()) {
-            $client->forceDelete();
+        if ($request->boolean('force')) {
+            $client->delete();
 
             return redirect()
                 ->route('admin.clients.index')
                 ->with('status', 'Client supprimé définitivement.');
         }
 
-        if (! $client->trashed()) {
-            $client->delete();
+        $client->est_actif = false;
+        $client->save();
 
-            return redirect()
-                ->route('admin.clients.index')
-                ->with('status', 'Client archivé.');
-        }
-
-        return back()->with('status', 'Le client est déjà archivé.');
+        return redirect()
+            ->route('admin.clients.index')
+            ->with('status', 'Client archivé.');
     }
 
     public function restore($clientId)
     {
-        $client = Client::withTrashed()->findOrFail($clientId);
+        $client = User::where('role', 'client')->findOrFail($clientId);
 
-        if (! $client->trashed()) {
-            return back()->with('status', 'Le client est déjà actif.');
-        }
-
-        $client->restore();
+        $client->est_actif = true;
+        $client->save();
 
         return redirect()
             ->route('admin.clients.show', $client->id)

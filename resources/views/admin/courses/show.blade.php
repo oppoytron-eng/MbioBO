@@ -7,31 +7,35 @@
         <h2>Course #{{ $course->id }}</h2>
         <div style="display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1rem;">
             <span class="pill">
-                @if($course->est_annule)
+                @if($course->statut === 'annulee')
                     Annulée
-                @elseif($course->est_terminee)
+                @elseif($course->statut === 'terminee')
                     Terminée
+                @elseif($course->statut === 'en_cours')
+                    En cours
+                @elseif($course->statut === 'acceptee')
+                    Acceptée
                 @else
                     {{ $course->statut }}
                 @endif
             </span>
             <span class="pill">
-                {{ number_format($course->distance_km, 1) }} km · {{ number_format($course->prix_final, 0, ',', ' ') }} FCFA
+                {{ number_format($course->distance_meters / 1000, 1) }} km · {{ number_format($course->prix_final, 0, ',', ' ') }} FCFA
             </span>
-            <span class="pill">Demandée le {{ optional($course->demande_le)->format('d/m/Y H:i') ?? '—' }}</span>
-            <span class="pill">Terminée le {{ optional($course->termine_le)->format('d/m/Y H:i') ?? '—' }}</span>
+            <span class="pill">Demandée le {{ optional($course->created_at)->format('d/m/Y H:i') ?? '—' }}</span>
+            <span class="pill">Terminée le {{ optional($course->updated_at)->format('d/m/Y H:i') ?? '—' }}</span>
         </div>
 
         <div class="quick-actions" style="margin-bottom:1rem;">
-            <a class="badge success" href="{{ route('admin.clients.show', $course->client_id) }}">Voir le client</a>
-            <a class="badge success" href="{{ route('admin.chauffeurs.show', $course->chauffeur_id) ?? '#' }}">Voir le chauffeur</a>
-            @if(! $course->est_annule)
+            <a class="badge success" href="{{ $course->client ? route('admin.clients.show', $course->client_id) : '#' }}">Voir le client</a>
+            <a class="badge success" href="{{ $course->chauffeur ? route('admin.chauffeurs.show', $course->chauffeur_id) : '#' }}">Voir le chauffeur</a>
+            @if($course->statut !== 'annulee')
                 <form method="POST" action="{{ route('admin.courses.cancel', $course->id) }}">
                     @csrf
                     <button type="submit" class="badge warn">Annuler</button>
                 </form>
             @endif
-            @if(! $course->est_terminee)
+            @if($course->statut !== 'terminee')
                 <form method="POST" action="{{ route('admin.courses.complete', $course->id) }}">
                     @csrf
                     <button type="submit" class="badge success">Terminer</button>
@@ -43,15 +47,15 @@
         <div style="display:flex; flex-wrap:wrap; gap:1.5rem;">
             <div>
                 <strong>Départ</strong>
-                <div>{{ $course->adresse_depart }} ({{ $course->lat_depart }}, {{ $course->lng_depart }})</div>
+                <div>{{ $course->depart_latitude ?? '—' }}, {{ $course->depart_longitude ?? '—' }}</div>
             </div>
             <div>
                 <strong>Arrivée</strong>
-                <div>{{ $course->adresse_arrivee }} ({{ $course->lat_arrivee }}, {{ $course->lng_arrivee }})</div>
+                <div>{{ $course->arrivee_latitude ?? '—' }}, {{ $course->arrivee_longitude ?? '—' }}</div>
             </div>
             <div>
                 <strong>Mode de paiement</strong>
-                <div>{{ $course->modePaiement }}</div>
+                <div>{{ $course->mode_paiement ?? '—' }}</div>
             </div>
         </div>
     </section>
@@ -69,7 +73,7 @@
             </div>
             <div>
                 <strong>Statut du paiement</strong>
-                @if($course->est_terminee)
+                @if($course->statut === 'terminee')
                     <div class="badge success">Payé</div>
                 @else
                     <div class="badge warn">En attente</div>
@@ -97,20 +101,20 @@
                     <tbody>
                     @foreach($history as $row)
                         <tr>
-                            <td>{{ optional($row->termine_le)->format('d/m/Y H:i') ?? '—' }}</td>
-                            <td>{{ optional($row->chauffeur->utilisateur)->prenom ?? '—' }} {{ optional($row->chauffeur->utilisateur)->nom ?? '' }}</td>
+                            <td>{{ optional($row->updated_at)->format('d/m/Y H:i') ?? '—' }}</td>
+                            <td>{{ $row->chauffeur->name ?? '—' }}</td>
                             <td>
-                                @if($row->est_annule)
+                                @if($row->statut === 'annulee')
                                     <span class="badge warn">Annulée</span>
-                                @elseif($row->est_terminee)
+                                @elseif($row->statut === 'terminee')
                                     <span class="badge success">Terminée</span>
                                 @else
-                                    <span class="badge success">{{ $row->statut }}</span>
+                                    <span class="badge secondary">{{ $row->statut }}</span>
                                 @endif
                             </td>
                             <td>
-                                <small>{{ $row->adresse_depart }}</small><br>
-                                <strong>{{ $row->adresse_arrivee }}</strong>
+                                <small>Départ: {{ $row->depart_latitude ?? '—' }}, {{ $row->depart_longitude ?? '—' }}</small><br>
+                                <strong>Arrivée: {{ $row->arrivee_latitude ?? '—' }}, {{ $row->arrivee_longitude ?? '—' }}</strong>
                             </td>
                             <td>{{ number_format($row->prix_final, 0, ',', ' ') }} FCFA</td>
                         </tr>
@@ -133,81 +137,54 @@
     @endonce
 
     @php
-        $positionRoute = $course->positions->map(function ($position) {
-            return [$position->latitude, $position->longitude];
+        $positionRoute = $course->tracks->map(function ($track) {
+            return [$track->latitude, $track->longitude];
         })->values();
     @endphp
 
     <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            const mapEl = document.getElementById('course-map');
-            if (!mapEl) {
-                return;
-            }
-
-            const startLat = Number.parseFloat(@json($course->lat_depart ?? null));
-            const startLng = Number.parseFloat(@json($course->lng_depart ?? null));
-            const endLat = Number.parseFloat(@json($course->lat_arrivee ?? null));
-            const endLng = Number.parseFloat(@json($course->lng_arrivee ?? null));
+        document.addEventListener('DOMContentLoaded', function() {
+            const startLat = Number.parseFloat({{ $course->depart_latitude ?? 'null' }});
+            const startLng = Number.parseFloat({{ $course->depart_longitude ?? 'null' }});
+            const endLat = Number.parseFloat({{ $course->arrivee_latitude ?? 'null' }});
+            const endLng = Number.parseFloat({{ $course->arrivee_longitude ?? 'null' }});
 
             const hasCoordinates = [startLat, startLng, endLat, endLng].every(Number.isFinite);
 
-            if (!hasCoordinates) {
-                mapEl.innerHTML = "<p class=\"muted\" style=\"padding:1rem;\">Coordonnées GPS manquantes pour afficher la carte.</p>";
-                return;
-            }
+            if (hasCoordinates) {
+                const map = L.map('course-map').setView([startLat, startLng], 13);
+                
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: ' OpenStreetMap contributors'
+                }).addTo(map);
 
-            const positions = @json($positionRoute);
-            const pathCoords = positions.length ? positions : [[startLat, startLng], [endLat, endLng]];
-            const map = L.map(mapEl, {
-                zoomControl: false,
-                scrollWheelZoom: false,
-            })
-                .setView(pathCoords[0], 13);
+                const startIcon = L.divIcon({
+                    html: '',
+                    iconSize: [20, 20],
+                    className: 'custom-div-icon'
+                });
 
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                maxZoom: 19,
-                attribution: '&copy; OpenStreetMap contributors',
-            }).addTo(map);
+                const endIcon = L.divIcon({
+                    html: '',
+                    iconSize: [20, 20],
+                    className: 'custom-div-icon'
+                });
 
-            const startMarker = L.marker([startLat, startLng]).addTo(map);
-            const endMarker = L.marker([endLat, endLng]).addTo(map);
+                L.marker([startLat, startLng], {icon: startIcon}).addTo(map)
+                    .bindPopup('Départ');
 
-            startMarker.bindPopup("Départ");
-            endMarker.bindPopup("Arrivée");
+                L.marker([endLat, endLng], {icon: endIcon}).addTo(map)
+                    .bindPopup('Arrivée');
 
-            L.control.scale({imperial: false}).addTo(map);
+                if (@json($positionRoute->count()) > 0) {
+                    const routeCoords = @json($positionRoute);
+                    L.polyline(routeCoords, {color: 'blue', weight: 4, opacity: 0.7}).addTo(map);
+                } else {
+                    L.polyline([[startLat, startLng], [endLat, endLng]], {color: 'blue', weight: 4, opacity: 0.7}).addTo(map);
+                }
 
-            let routeLayer = L.polyline(pathCoords, {
-                color: '#38bdf8',
-                weight: 4,
-                opacity: 0.8,
-                lineCap: 'round',
-            }).addTo(map);
-
-            const bounds = routeLayer.getBounds().isValid()
-                ? routeLayer.getBounds()
-                : L.latLngBounds([pathCoords[0], [pathCoords[0][0] + 0.001, pathCoords[0][1] + 0.001]]);
-            map.fitBounds(bounds, {padding: [40, 40]});
-
-            if (!positions.length) {
-                const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`;
-                fetch(osrmUrl)
-                    .then(response => response.json())
-                    .then(data => {
-                        if (!data.routes?.length) {
-                            return;
-                        }
-                        const roadCoords = data.routes[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]);
-                        if (!roadCoords.length) {
-                            return;
-                        }
-                        routeLayer.setLatLngs(roadCoords);
-                        map.fitBounds(L.latLngBounds(roadCoords), {padding: [40, 40]});
-                    })
-                    .catch(() => {
-                        /* ignore OSRM failures */
-                    });
+                const group = L.featureGroup([startLat, startLng], [endLat, endLng]);
+                map.fitBounds(group.getBounds().pad(0.1));
             }
 
             setTimeout(function () {

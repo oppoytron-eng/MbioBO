@@ -57,6 +57,18 @@ class ApiCourse extends Model
         return $this->belongsTo(User::class, 'chauffeur_id');
     }
 
+    public function chauffeurProfile()
+    {
+        return $this->hasOneThrough(
+            Chauffeur::class,
+            User::class,
+            'id', // Clé dans users
+            'utilisateur_id', // Clé dans chauffeurs
+            'chauffeur_id', // Clé locale dans api_courses
+            'id' // Clé locale dans users
+        );
+    }
+
     public function notifications()
     {
         return $this->hasMany(ApiNotification::class, 'course_id');

@@ -17,7 +17,7 @@ class NotificationController extends Controller
     {
         $course = ApiCourse::with('client')->findOrFail($course_id);
 
-        $countdownSeconds = (int) max($request->input('countdown_seconds', $course->countdown_seconds ?? 120), 30);
+        $countdownSeconds = (int) max($request->input('countdown_seconds', $course->countdown_seconds ?? 300), 30);
         $expireAfterSeconds = (int) max($request->input('expire_after_seconds', $countdownSeconds), 30);
         $distanceMeters = (float) ($request->input('distance_meters') ?? $course->distance_meters ?? $this->calculateDistanceMeters(
             $course->depart_latitude,
@@ -54,6 +54,7 @@ class NotificationController extends Controller
         ]);
 
         $chauffeurs = $this->eligibleChauffeurs();
+        
         foreach ($chauffeurs as $chauffeur) {
             ApiNotificationChauffeur::create([
                 'notification_id' => $notification->id,
@@ -70,15 +71,115 @@ class NotificationController extends Controller
         ]);
     }
 
+    // Authentifier pour les channels privés WebSocket
+    public function authenticate(Request $request)
+    {
+        $data = $request->validate([
+            'channel_name' => ['required', 'string'],
+            'socket_id' => ['required', 'string'],
+        ]);
+
+        $user = $request->user();
+        
+        // Vérifier si l'utilisateur a le droit d'accéder à ce channel
+        if (str_starts_with($data['channel_name'], 'private-course.')) {
+            $courseId = str_replace('private-course.', '', $data['channel_name']);
+            $course = \App\Models\ApiCourse::find($courseId);
+            
+            if (!$course || ($course->client_id !== $user->id && $course->chauffeur_id !== $user->id)) {
+                return response()->json(['error' => 'Unauthorized'], 403);
+            }
+        }
+        
+        if (str_starts_with($data['channel_name'], 'private-chauffeur.')) {
+            $chauffeurId = str_replace('private-chauffeur.', '', $data['channel_name']);
+            if ($user->id !== (int)$chauffeurId) {
+                return response()->json(['error' => 'Unauthorized'], 403);
+            }
+        }
+
+        // Générer la signature d'authentification
+        $authKey = env('PUSHER_APP_KEY');
+        $authSecret = env('PUSHER_APP_SECRET');
+        
+        $authData = [
+            'auth_key' => $authKey,
+            'auth_secret' => $authSecret,
+            'socket_id' => $data['socket_id'],
+            'channel_name' => $data['channel_name'],
+        ];
+
+        $stringToSign = implode(':', [
+            $authData['socket_id'],
+            $authData['channel_name'],
+        ]);
+
+        $signature = hash_hmac('sha256', $stringToSign, $authSecret);
+
+        return response()->json([
+            'auth' => $signature,
+            'channel_data' => [
+                'user_id' => $user->id,
+                'user_info' => [
+                    'name' => $user->name,
+                    'role' => $user->role,
+                ],
+            ],
+        ]);
+    }
+
+    // Obtenir les notifications de l'utilisateur connecté
     public function mesNotifications(Request $request)
     {
-        $notifications = ApiNotificationChauffeur::where('chauffeur_id', $request->user()->id)
-            ->where('expire_le', '>', now())
-            ->where('statut', 'en_attente')
-            ->orderByDesc('created_at')
-            ->get();
+        $user = $request->user();
+        
+        try {
+            if ($user->role === 'chauffeur') {
+                // Pour les chauffeurs : notifications de courses + notifications admin
+                $courseNotifications = ApiNotificationChauffeur::where('chauffeur_id', $user->id)
+                    ->where('expire_le', '>', now())
+                    ->where('statut', 'en_attente')
+                    ->with('notification') // ✅ CHARGER LA RELATION
+                    ->orderByDesc('created_at')
+                    ->get();
 
-        return response()->json($notifications);
+                // Récupérer les notifications admin globales et pour chauffeurs
+                $adminNotifications = ApiNotification::whereIn('type', ['admin_broadcast', 'admin_notification'])
+                    ->where(function($query) {
+                        $query->whereNull('course_id')
+                              ->orWhere('course_id', 0);
+                    })
+                    ->orderByDesc('created_at')
+                    ->limit(10)
+                    ->get();
+
+                return response()->json([
+                    'course_notifications' => $courseNotifications,
+                    'admin_notifications' => $adminNotifications
+                ]);
+            } elseif ($user->role === 'client') {
+                // Pour les clients : uniquement les notifications admin
+                $adminNotifications = ApiNotification::whereIn('type', ['admin_broadcast', 'admin_notification'])
+                    ->where(function($query) {
+                        $query->whereNull('course_id')
+                              ->orWhere('course_id', 0);
+                    })
+                    ->orderByDesc('created_at')
+                    ->limit(20)
+                    ->get();
+
+                return response()->json([
+                    'admin_notifications' => $adminNotifications
+                ]);
+            }
+
+            return response()->json([]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Erreur lors de la récupération des notifications',
+                'message' => $e->getMessage()
+            ], 500);
+        }
     }
 
     public function historique(Request $request)
@@ -138,13 +239,24 @@ class NotificationController extends Controller
         $query = User::where('role', 'chauffeur')
             ->where('est_actif', true);
 
+        // Vérifier si le chauffeur a des documents validés (si possible)
         foreach ($this->requiredDocumentTypes as $type) {
             $query->whereHas('driverDocuments', function ($q) use ($type) {
                 $q->where('type', $type)->where('status', 'approved');
             });
         }
 
-        return $query->get();
+        // Alternative: si aucun document requis, prendre tous les chauffeurs actifs
+        $chauffeurs = $query->get();
+        
+        // Si aucun chauffeur n'a de documents validés, prendre tous les chauffeurs actifs
+        if ($chauffeurs->isEmpty()) {
+            $chauffeurs = User::where('role', 'chauffeur')
+                ->where('est_actif', true)
+                ->get();
+        }
+
+        return $chauffeurs;
     }
 
     private function buildClientPayload(ApiCourse $course): array

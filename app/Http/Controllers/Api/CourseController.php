@@ -4,6 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ApiCourse;
+use App\Models\ApiNotification;
+use App\Models\ApiNotificationChauffeur;
+use App\Models\User;
 use Illuminate\Http\Request;
 
 class CourseController extends Controller
@@ -30,6 +33,7 @@ class CourseController extends Controller
 
         $course = ApiCourse::create([
             'client_id' => $request->user()->id,
+            'chauffeur_id' => null,
             'depart_latitude' => $data['depart_latitude'],
             'depart_longitude' => $data['depart_longitude'],
             'arrivee_latitude' => $data['arrivee_latitude'],
@@ -44,10 +48,19 @@ class CourseController extends Controller
             'otp_expires_at' => now()->addMinutes(20),
         ]);
 
+        // ✅ NOTIFIER AUTOMATIQUEMENT LES CHAUFFEURS
+        $this->notifierChauffeurs($course);
+
         return response()->json([
             'message' => 'Course créée avec succès',
             'course' => $course->fresh(),
         ], 201);
+    }
+
+    public function index(Request $request)
+    {
+        $courses = ApiCourse::orderByDesc('created_at')->get();
+        return response()->json($courses);
     }
 
     public function mesCourses(Request $request)
@@ -141,8 +154,18 @@ class CourseController extends Controller
 
     public function details($id)
     {
-        $course = ApiCourse::with(['client', 'chauffeur', 'tracks'])->findOrFail($id);
-        return response()->json($course);
+        $course = ApiCourse::with(['client', 'chauffeur', 'chauffeurProfile', 'tracks'])->findOrFail($id);
+        
+        // Ajouter les coordonnées du chauffeur si disponibles
+        $courseData = $course->toArray();
+        if ($course->chauffeurProfile && $course->chauffeurProfile->lat_actuelle && $course->chauffeurProfile->lng_actuelle) {
+            $courseData['chauffeur_position'] = [
+                'latitude' => $course->chauffeurProfile->lat_actuelle,
+                'longitude' => $course->chauffeurProfile->lng_actuelle,
+            ];
+        }
+        
+        return response()->json($courseData);
     }
 
     public function verifierOtp(Request $request, $id)
@@ -191,26 +214,39 @@ class CourseController extends Controller
 
         $course->update($update);
 
+        // 🎉 DIFFUSER L'ÉVÉNEMENT OTP VALIDÉ
+        broadcast(new \App\Events\CourseOtpValidated($course->id, $course->chauffeur_id));
+
         return response()->json([
             'message' => 'OTP validé',
             'course' => $course->fresh(),
         ]);
     }
 
-    private function calculateDistanceMeters(float $lat1, float $lng1, float $lat2, float $lng2): float
+    private function calculateDistanceMeters($lat1, $lon1, $lat2, $lon2)
     {
-        $earthRadius = 6371000;
-        $latDelta = deg2rad($lat2 - $lat1);
-        $lngDelta = deg2rad($lng2 - $lng1);
-        $lat1Rad = deg2rad($lat1);
-        $lat2Rad = deg2rad($lat2);
+        $earthRadius = 6371000; // Rayon de la Terre en mètres
 
-        $a = sin($latDelta / 2) ** 2 +
-            cos($lat1Rad) * cos($lat2Rad) * sin($lngDelta / 2) ** 2;
+        $latFrom = deg2rad($lat1);
+        $lonFrom = deg2rad($lon1);
+        $latTo = deg2rad($lat2);
+        $lonTo = deg2rad($lon2);
+
+        $latDelta = $latTo - $latFrom;
+        $lonDelta = $lonTo - $lonFrom;
+
+        $a = sin($latDelta / 2) * sin($latDelta / 2) +
+             cos($latFrom) * cos($latTo) *
+             sin($lonDelta / 2) * sin($lonDelta / 2);
 
         $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
 
         return $earthRadius * $c;
+    }
+
+    private function calculateDistanceKm($lat1, $lon1, $lat2, $lon2)
+    {
+        return $this->calculateDistanceMeters($lat1, $lon1, $lat2, $lon2) / 1000;
     }
 
     private function buildClientSnapshot($client): array
@@ -226,4 +262,87 @@ class CourseController extends Controller
     {
         return str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
     }
+
+    // ✅ NOTIFIER AUTOMATIQUEMENT LES CHAUFFEURS DANS UN RAYON DE 5KM
+    private function notifierChauffeurs(ApiCourse $course)
+        {
+            $countdownSeconds   = $course->countdown_seconds ?? 300; // 5 minutes
+            $expireAfterSeconds = $countdownSeconds;
+            $rayonKm            = 5; // Rayon de 5km
+
+            $payload = [
+                'depart' => [
+                    'latitude'  => $course->depart_latitude,
+                    'longitude' => $course->depart_longitude,
+                ],
+                'arrivee' => [
+                    'latitude'  => $course->arrivee_latitude,
+                    'longitude' => $course->arrivee_longitude,
+                ],
+                'prix_estime' => $course->prix_estime,
+                'metadata'    => $course->metadata ?? [],
+            ];
+
+            // ✅ CORRIGÉ : utiliser les champs directs de la table users
+            $chauffeursActifs = User::where('role', 'chauffeur')
+                ->where('est_actif', true)
+                ->whereNotNull('latitude')
+                ->whereNotNull('longitude')
+                ->get();
+
+            // Filtrer les chauffeurs dans un rayon de 5km
+            $chauffeursProches = $chauffeursActifs->filter(function ($chauffeur) use ($course, $rayonKm) {
+                // ✅ CORRIGÉ : utiliser les champs directs de la table users
+                if (!$chauffeur->latitude || !$chauffeur->longitude) {
+                    return false;
+                }
+
+                $distance = $this->calculateDistanceKm(
+                    $course->depart_latitude,
+                    $course->depart_longitude,
+                    $chauffeur->latitude,   // ✅ champ correct
+                    $chauffeur->longitude    // ✅ champ correct
+                );
+
+                // Ajouter les infos de position et distance pour l'affichage
+                $chauffeur->distance_km = round($distance, 2);
+
+                return $distance <= $rayonKm;
+            });
+
+            // Créer la notification
+            $notification = ApiNotification::create([
+                'course_id'          => $course->id,
+                'type'               => 'nouvelle_course',
+                'message'            => 'Nouvelle course disponible',
+                'payload'            => $payload,
+                'distance_meters'    => $course->distance_meters,
+                'sound'              => null,
+                'countdown_active'   => false,
+                'countdown_seconds'  => $countdownSeconds,
+                'client_info'        => $course->client_snapshot,
+            ]);
+
+            // Notifier uniquement les chauffeurs dans le rayon
+            foreach ($chauffeursProches as $chauffeur) {
+                ApiNotificationChauffeur::create([
+                    'notification_id' => $notification->id,
+                    'chauffeur_id'    => $chauffeur->id,
+                    'statut'          => 'en_attente',
+                    'expire_le'       => now()->addSeconds($expireAfterSeconds),
+                ]);
+            }
+
+            // 🚀 BROADCASTER LES ÉVÉNEMENTS WEBSOCKET
+
+            // 1. Notifier le client avec les positions des chauffeurs disponibles
+            broadcast(new \App\Events\ChauffeursDisponiblesUpdated($course->id, $chauffeursProches));
+
+            // 2. Notifier les chauffeurs concernés par la nouvelle course
+            if ($chauffeursProches->count() > 0) {
+                broadcast(new \App\Events\CourseRequested($course, $chauffeursProches));
+            }
+
+            \Log::info("Course {$course->id} notifiée à {$chauffeursProches->count()} chauffeurs dans un rayon de {$rayonKm}km (sur {$chauffeursActifs->count()} chauffeurs en ligne)");
+        }
 }

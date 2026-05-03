@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\ChauffeurStatus;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 
@@ -54,6 +55,11 @@ class AuthController extends Controller
             return response()->json(['message' => 'Identifiants incorrects'], 401);
         }
 
+        // Si c'est un chauffeur, mettre à jour son statut de connexion
+        if ($user->role === 'chauffeur') {
+            ChauffeurStatus::updateStatus($user->id, 'En ligne');
+        }
+
         $token = $user->createToken('auth_token')->plainTextToken;
 
         return response()->json([
@@ -65,7 +71,14 @@ class AuthController extends Controller
 
     public function logout(Request $request)
     {
-        $request->user()->currentAccessToken()?->delete();
+        $user = $request->user();
+        
+        // Si c'est un chauffeur, mettre à jour son statut de connexion
+        if ($user->role === 'chauffeur') {
+            ChauffeurStatus::updateStatus($user->id, 'Hors ligne');
+        }
+        
+        $user->currentAccessToken()?->delete();
 
         return response()->json(['message' => 'Déconnexion réussie']);
     }

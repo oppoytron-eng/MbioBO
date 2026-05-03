@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\DriverLocationUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\ApiCourse;
 use App\Models\ApiCourseTrack;
@@ -46,6 +47,9 @@ class TripTrackingController extends Controller
             'meta' => $data['meta'] ?? [],
         ]);
 
+        // Émettre l'événement WebSocket pour le suivi en temps réel
+        broadcast(new DriverLocationUpdated($track))->toOthers();
+
         return response()->json(['message' => 'Position enregistrée', 'track' => $track]);
     }
 
@@ -63,12 +67,27 @@ class TripTrackingController extends Controller
 
     public function latest(Request $request, $courseId)
     {
-        $course = ApiCourse::findOrFail($courseId);
+        $course = ApiCourse::with(['chauffeurProfile'])->findOrFail($courseId);
         if ($request->user()->id !== $course->client_id && $request->user()->id !== $course->chauffeur_id) {
             return response()->json(['message' => 'Action non autorisée'], 403);
         }
 
+        // D'abord essayer de récupérer un track existant
         $track = $course->tracks()->orderByDesc('recorded_at')->first();
+        
+        // Si aucun track mais que le chauffeur a une position, utiliser celle-ci
+        if (!$track && $course->chauffeurProfile && $course->chauffeurProfile->lat_actuelle && $course->chauffeurProfile->lng_actuelle) {
+            $track = (object)[
+                'id' => null,
+                'course_id' => $course->id,
+                'chauffeur_id' => $course->chauffeur_id,
+                'latitude' => $course->chauffeurProfile->lat_actuelle,
+                'longitude' => $course->chauffeurProfile->lng_actuelle,
+                'bearing' => null,
+                'speed' => null,
+                'recorded_at' => now(),
+            ];
+        }
 
         return response()->json(['track' => $track]);
     }

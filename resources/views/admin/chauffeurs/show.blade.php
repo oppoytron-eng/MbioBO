@@ -7,27 +7,33 @@
         <h2>Profil du chauffeur</h2>
         <div style="display:flex; flex-wrap:wrap; gap:1rem;">
             <div>
-                <strong>{{ $chauffeur->utilisateur->prenom ?? '' }} {{ $chauffeur->utilisateur->nom ?? '' }}</strong><br>
-                <small class="muted">Permis {{ $chauffeur->numero_permis ?? '—' }}</small>
+                <strong>{{ $chauffeur->name }}</strong><br>
+                <small class="muted">Permis {{ $chauffeur->chauffeurProfile ? $chauffeur->chauffeurProfile->numero_permis : '—' }}</small>
             </div>
             <div>
                 <small>Email</small><br>
-                {{ $chauffeur->utilisateur->email ?? '—' }}
+                {{ $chauffeur->email ?? '—' }}
             </div>
             <div>
                 <small>Téléphone</small><br>
-                {{ $chauffeur->utilisateur->telephone ?? '—' }}
+                {{ $chauffeur->telephone ?? '—' }}
             </div>
             <div>
                 <small>Statut opérationnel</small><br>
-                <span class="badge {{ $chauffeur->statut_operationnel === 'actif' ? 'success' : 'warn' }}">
-                    {{ ucfirst($chauffeur->statut_operationnel) }}
+                <span class="badge {{ $chauffeur->est_actif ? 'success' : 'warn' }}">
+                    {{ $chauffeur->est_actif ? 'Actif' : 'Inactif' }}
                 </span>
             </div>
             <div>
-                <small>Documents</small><br>
-                <span class="badge {{ $chauffeur->etat_documents === 'validated' ? 'success' : ($chauffeur->etat_documents === 'rejected' ? 'warn' : '') }}">
-                    {{ ucfirst($chauffeur->etat_documents) }}
+                <small>Statut connexion</small><br>
+                <span class="badge {{ ($chauffeur->chauffeurStatus && $chauffeur->chauffeurStatus->statut === 'En ligne') || ($chauffeur->chauffeurProfile && $chauffeur->chauffeurProfile->statut === 'En ligne') ? 'success' : 'warn' }}">
+                    @if($chauffeur->chauffeurStatus)
+                        {{ $chauffeur->chauffeurStatus->statut }}
+                    @elseif($chauffeur->chauffeurProfile)
+                        {{ $chauffeur->chauffeurProfile->statut }}
+                    @else
+                        Hors ligne
+                    @endif
                 </span>
             </div>
         </div>
@@ -48,7 +54,7 @@
                 <input type="hidden" name="action" value="suspend">
                 <button type="submit" class="badge warn">Suspendre</button>
             </form>
-            @if ($chauffeur->trashed())
+            @if (! $chauffeur->est_actif)
                 <form method="POST" action="{{ route('admin.chauffeurs.restore', $chauffeur->id) }}">
                     @csrf
                     <button type="submit" class="badge success">Restaurer</button>
@@ -83,7 +89,7 @@
 
     <section class="card" style="margin-top:1rem;">
         <h3>Documents</h3>
-        @if ($chauffeur->documents->isEmpty())
+        @if (!$chauffeur->driverDocuments || $chauffeur->driverDocuments->isEmpty())
             <p>Aucun document à valider.</p>
         @else
             <div class="table-wrapper">
@@ -96,12 +102,12 @@
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach ($chauffeur->documents as $document)
+                        @foreach ($chauffeur->driverDocuments as $document)
                             <tr>
                                 <td>{{ ucfirst($document->type) }}</td>
                                 <td>
-                                    <span class="badge {{ $document->status === 'validated' ? 'success' : ($document->status === 'rejected' ? 'warn' : '') }}">
-                                        {{ ucfirst($document->status) }}
+                                    <span class="badge {{ $document->status === 'approved' ? 'success' : ($document->status === 'rejected' ? 'warn' : '') }}">
+                                        {{ $document->status === 'approved' ? 'Validé' : ($document->status === 'rejected' ? 'Rejeté' : 'En attente') }}
                                     </span>
                                     <div class="muted" style="font-size:0.8rem;">
                                         mis à jour le {{ optional($document->reviewed_at)->format('d/m/Y H:i') ?? '—' }}
@@ -111,7 +117,7 @@
                                     <div class="quick-actions">
                                         <form method="POST" action="{{ route('admin.chauffeurs.documents.review', ['chauffeur' => $chauffeur->id, 'document' => $document->id]) }}">
                                             @csrf
-                                            <input type="hidden" name="status" value="validated">
+                                            <input type="hidden" name="status" value="approved">
                                             <button type="submit" class="badge success">Valider</button>
                                         </form>
                                         <form method="POST" class="quick-review" action="{{ route('admin.chauffeurs.documents.review', ['chauffeur' => $chauffeur->id, 'document' => $document->id]) }}">

@@ -23,13 +23,14 @@ class Utilisateur extends Authenticatable
         'email',
         'telephone',
         'mot_de_passe',
+        'password', // Ajout pour compatibilité Laravel
         'role',
         'est_actif',
         'statut',
         'otp_code',
         'otp_expires_at',
     ];
-    protected $hidden = ['mot_de_passe'];
+    protected $hidden = ['mot_de_passe', 'password'];
     protected $casts = [
         'est_actif' => 'boolean',
         'otp_expires_at' => 'datetime',
@@ -54,6 +55,17 @@ class Utilisateur extends Authenticatable
         return $this->hasMany(Notification::class, 'destinataire_id');
     }
     public function getAuthPassword()
+    {
+        return $this->mot_de_passe;
+    }
+
+    // Ajout pour compatibilité Laravel - mapping password vers mot_de_passe
+    public function setPasswordAttribute($value)
+    {
+        $this->attributes['mot_de_passe'] = $value;
+    }
+
+    public function getPasswordAttribute()
     {
         return $this->mot_de_passe;
     }

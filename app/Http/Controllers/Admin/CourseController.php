@@ -3,7 +3,8 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\Course;
+use App\Models\ApiCourse;
+use App\Models\User;
 use Illuminate\Http\Request;
 
 class CourseController extends Controller
@@ -18,71 +19,72 @@ class CourseController extends Controller
         $search = $request->input('search');
         $filter = $request->input('filter');
 
-        $query = Course::with(['client.utilisateur', 'chauffeur.utilisateur']);
+        $query = ApiCourse::with(['client', 'chauffeur']);
 
+        // Filtres par statut API
         if ($filter === 'cancelled') {
-            $query->where('est_annule', true);
+            $query->where('statut', 'annulee');
         } elseif ($filter === 'completed') {
-            $query->where('est_terminee', true);
+            $query->where('statut', 'terminee');
         } elseif ($filter === 'active') {
-            $query->where('est_annule', false)->where('est_terminee', false);
+            $query->whereIn('statut', ['en_attente', 'acceptee', 'en_cours']);
         }
 
         if ($search) {
             $query->where(function ($q) use ($search) {
-                $q->whereHas('client.utilisateur', function ($sub) use ($search) {
-                    $sub->where('nom', 'like', "%{$search}%")
-                        ->orWhere('prenom', 'like', "%{$search}%");
-                })->orWhereHas('chauffeur.utilisateur', function ($sub) use ($search) {
-                    $sub->where('nom', 'like', "%{$search}%")
-                        ->orWhere('prenom', 'like', "%{$search}%");
+                $q->whereHas('client', function ($sub) use ($search) {
+                    $sub->where('name', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%");
+                })->orWhereHas('chauffeur', function ($sub) use ($search) {
+                    $sub->where('name', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%");
                 });
             });
         }
 
-        $courses = $query->orderByDesc('termine_le')->paginate(12)->withQueryString();
+        $courses = $query->orderByDesc('created_at')->paginate(12)->withQueryString();
         $counts = [
-            'total' => Course::count(),
-            'active' => Course::where('est_annule', false)->where('est_terminee', false)->count(),
-            'cancelled' => Course::where('est_annule', true)->count(),
-            'completed' => Course::where('est_terminee', true)->count(),
+            'total' => ApiCourse::count(),
+            'active' => ApiCourse::whereIn('statut', ['en_attente', 'acceptee', 'en_cours'])->count(),
+            'cancelled' => ApiCourse::where('statut', 'annulee')->count(),
+            'completed' => ApiCourse::where('statut', 'terminee')->count(),
         ];
 
         return view('admin.courses.index', compact('courses', 'search', 'filter', 'counts'));
     }
 
-    public function show(Course $course)
+    public function show($id)
     {
-        $course->load(['client.utilisateur', 'chauffeur.utilisateur', 'positions']);
+        $course = ApiCourse::with(['client', 'chauffeur', 'chauffeurProfile', 'tracks'])->findOrFail($id);
 
-        $history = Course::with('chauffeur.utilisateur')
+        $history = ApiCourse::with('chauffeur')
             ->where('client_id', $course->client_id)
-            ->orderByDesc('termine_le')
+            ->orderByDesc('created_at')
             ->limit(6)
             ->get();
 
         return view('admin.courses.show', compact('course', 'history'));
     }
 
-    public function cancel(Course $course)
+    public function cancel($id)
     {
-        if (! $course->est_annule) {
-            $course->update([
-                'est_annule' => true,
-                'est_terminee' => false,
-            ]);
+        $course = ApiCourse::findOrFail($id);
+        
+        if ($course->statut !== 'annulee') {
+            $course->update(['statut' => 'annulee']);
         }
 
         return back()->with('status', 'Course annulée.');
     }
 
-    public function complete(Course $course)
+    public function complete($id)
     {
-        if (! $course->est_terminee) {
+        $course = ApiCourse::findOrFail($id);
+        
+        if ($course->statut !== 'terminee') {
             $course->update([
-                'est_terminee' => true,
-                'est_annule' => false,
-                'termine_le' => now(),
+                'statut' => 'terminee',
+                'prix_final' => $course->prix_estime,
             ]);
         }
 

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AdminAuthController;
+use App\Http\Controllers\Admin\AdminApiController;
 use App\Http\Controllers\Admin\ClientController;
 use App\Http\Controllers\Admin\AdminRoleController;
 use App\Http\Controllers\Admin\AppSettingsController;
@@ -71,6 +72,18 @@ Route::prefix('admin')->name('admin.')->group(function () {
             Route::get('withdrawals', [FinanceController::class, 'withdrawals'])->name('withdrawals');
             Route::post('withdrawals/{withdrawal}/approve', [FinanceController::class, 'approveWithdrawal'])->name('withdrawals.approve');
             Route::post('withdrawals/{withdrawal}/reject', [FinanceController::class, 'rejectWithdrawal'])->name('withdrawals.reject');
+        });
+
+        // API Admin - Routes sécurisées pour les données des applications mobiles
+        Route::prefix('api')->name('api.')->group(function () {
+            Route::get('dashboard/stats', [AdminApiController::class, 'dashboardStats'])->name('dashboard.stats');
+            Route::get('courses', [AdminApiController::class, 'courses'])->name('courses');
+            Route::get('courses/{id}', [AdminApiController::class, 'courseDetails'])->name('courses.details');
+            Route::get('courses/recent', [AdminApiController::class, 'recentCourses'])->name('courses.recent');
+            Route::get('chauffeurs', [AdminApiController::class, 'chauffeurs'])->name('chauffeurs');
+            Route::get('clients', [AdminApiController::class, 'clients'])->name('clients');
+            Route::get('notifications/recent', [AdminApiController::class, 'recentNotifications'])->name('notifications.recent');
+            Route::get('stats/detailed', [AdminApiController::class, 'detailedStats'])->name('stats.detailed');
         });
     });
 });

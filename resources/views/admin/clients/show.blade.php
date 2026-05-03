@@ -6,17 +6,17 @@
     <section class="card">
         <h2>Profil du client</h2>
         <p style="margin-bottom:0.5rem;">
-            <strong>{{ $client->utilisateur->prenom ?? '' }} {{ $client->utilisateur->nom ?? '' }}</strong>
-            <span class="pill">{{ $client->utilisateur->role ?? 'Client' }}</span>
+            <strong>{{ $client->name }}</strong>
+            <span class="pill">{{ $client->role ?? 'Client' }}</span>
         </p>
         <div style="display:flex; flex-wrap:wrap; gap:1rem;">
             <div>
                 <small>Email</small><br>
-                {{ $client->utilisateur->email ?? '—' }}
+                {{ $client->email ?? '—' }}
             </div>
             <div>
                 <small>Téléphone</small><br>
-                {{ $client->utilisateur->telephone ?? '—' }}
+                {{ $client->telephone ?? '—' }}
             </div>
             <div>
                 <small>Statut actuel</small><br>
@@ -30,12 +30,12 @@
             </div>
             <div>
                 <small>Dernière archive</small><br>
-                {{ $client->deleted_at ? $client->deleted_at->diffForHumans() : 'Jamais' }}
+                {{ $client->est_actif ? 'Jamais' : 'Archivé' }}
             </div>
         </div>
 
         <div class="quick-actions" style="margin-top:1rem;">
-            @if (! $client->trashed())
+            @if ($client->est_actif)
                 <form method="POST" action="{{ route('admin.clients.toggle-active', $client->id) }}">
                     @csrf
                     <input type="hidden" name="action" value="{{ $client->est_actif ? 'disable' : 'enable' }}">
