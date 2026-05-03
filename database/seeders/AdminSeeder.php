@@ -14,7 +14,7 @@ class AdminSeeder extends Seeder
         Utilisateur::updateOrCreate(
             ['email' => 'admin@exemple.com'],
             [
-                'id' => (string) Str::uuid(), // <-- Génère l'UUID côté PHP
+                'utilisateur_id' => (string) Str::uuid(), // <-- Génère l'UUID côté PHP
                 'nom' => 'Administrateur',
                 'prenom' => 'System',
                 'telephone' => '0123456789',
